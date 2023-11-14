@@ -1,0 +1,122 @@
+---
+title: "Transport_Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r}
+# Set up working directory
+setwd('/Users/Quankun/RstudioProject/TP_Dashboard')
+```
+
+```{r setup, include=FALSE}
+# Import libraries
+library(flexdashboard)
+library(tidyverse)
+library(highcharter)
+library(gt)
+library(htmltools)
+library(viridis)
+library(sf)
+```
+
+```{r}
+# Importing data
+## Import VN map data
+vn_spatial <- read_sf('vn_spatial.shp')
+
+## Import outbound data
+master_store <- read_csv('Master_store.csv', col_types = cols(.default = col_guess(), Store_code = col_character())) # Master Store
+df1 <- read_csv('/Users/Quankun/RstudioProject/xlsOutboundtoMerge20231/aggregated_data_1.csv') # Outbound data by orders
+
+## Join aggregated data with master store and remove NA values
+join_data <- left_join(df1, master_store, by = (c('STORE' = 'Store_code')))
+
+summary_data <- join_data %>% 
+  mutate(trip = str_c(TRUCKNO, WDATE, str_sub(TSMIN, 0, 2))) %>% 
+  group_by(Province) %>%
+  summarise(No_of_trip = n_distinct(trip), Delivery_point = n_distinct(STORE)) %>% filter(!is.na(Province)) -> summary_data
+
+vnn_map <- left_join(vn_spatial, summary_data, by = c('Name' = 'Province'))
+
+summary_data2 <- join_data %>% 
+  group_by(Region) %>% 
+  summarise(delivery_point = n_distinct(STORE)) %>% 
+  arrange(desc(delivery_point))
+```
+
+Trips and Delivery Points
+=======================================================================
+
+Column {.tabset .tabset-fade data-width=650}
+-----------------------------------------------------------------------
+
+### Transport Coverage
+
+```{r}
+ggplot()+
+  geom_sf(data = vnn_map %>% filter(Name != 'Ho Chi Minh'), mapping = aes(fill=No_of_trip), show.legend = T)+
+  theme(panel.background = element_rect(fill = 'azure'))+
+  scale_fill_viridis_b(direction = -1,
+                     option = 'G',
+                     name = 'Density (CBM):',
+                     guide = guide_colourbar(direction = 'horizontal',
+                                             barheight = unit(3, units = 'mm'),
+                                             barwidth = unit(30, units = 'mm'),
+                                             title.hjust = 0.5,
+                                             label.hjust = 0.5,
+                                             limits = c(0, 800),
+                                             title.position = 'top'))+
+  theme(legend.position = 'bottom', legend.justification = 'center')
+```
+
+### Most delivery trips
+
+```{r}
+# Colors
+custom_colors <- viridis::mako(n = 15)
+
+# Most delivery trips by Provinces
+summary_data %>% 
+  arrange(desc(No_of_trip)) %>% 
+  head(15) %>% 
+  hchart('column', hcaes(x = Province, y = No_of_trip, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>Number of Trips: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Most delivery trips',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'By Provinces',
+              style = list(fontSize = '16px')) %>% 
+  hc_credits(enabled = TRUE, text = 'Quan Tran')
+```
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+
+
+### Delivery points
+
+```{r}
+# Colors
+custom_colors <- viridis::plasma(n = 12)
+                                 
+
+# Delivery points per regions
+join_data %>% 
+  group_by(Region) %>% 
+  summarise(delivery_point = n_distinct(STORE)) %>% 
+  arrange(desc(delivery_point)) %>% 
+  filter(!is.na(Region)) %>% 
+  hchart('bar', hcaes(x = Region, y = delivery_point, color = custom_colors)) %>% 
+  hc_add_theme(hc_theme_google()) %>% 
+  hc_tooltip(pointFormat = '<b>Delivery Points: </b> {point.y} <br>') %>% 
+  hc_title(text = 'Delivery Point in 2024',
+           style = list(fontSize = '25px', fontWeight = 'bold')) %>% 
+  hc_subtitle(text = 'Per Province',
+              style = list(fontSize = '16px'))
+```
+
